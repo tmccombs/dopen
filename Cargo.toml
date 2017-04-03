@@ -1,0 +1,18 @@
+[package]
+name = "dopen"
+version = "0.1.0"
+authors = ["Thayne McCombs <astrothayne@gmail.com>"]
+description = "CLI to execute .desktop files"
+
+[dependencies]
+clap = "2.22.1"
+# These are depenencies of nom
+# but are needed because
+# macro hygiene isn't good enough
+# to encompass the dependency
+lazy_static = "0.2.5"
+regex = "0.2.1"
+
+[dependencies.nom]
+version = "2.2.0"
+features = [ "regexp_macros" ]
