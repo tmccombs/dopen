@@ -70,6 +70,12 @@ impl DesktopEntry {
     pub fn action_group(&self, action_name: &str) -> Option<&Group> {
         self.group(&format!("Desktop Action {}", action_name))
     }
+
+    /// Shortut for `self.main_group().get()`
+    #[inline]
+    pub fn get<T: Entry>(&self) -> Option<T> {
+        self.main_group().and_then(Group::get)
+    }
 }
 
 impl<'a> Index<&'a str> for DesktopEntry {

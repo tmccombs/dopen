@@ -21,7 +21,7 @@ macro_rules! entry_type {
     ($(#[$a:meta])* $name:ident (bool)) => {
         $(#[$a])*
             #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            pub struct $name(bool);
+            pub struct $name(pub bool);
         impl Entry for $name {
             #[inline(always)]
             fn name() -> &'static str { stringify!($name) }
@@ -42,7 +42,7 @@ macro_rules! entry_type {
     ($(#[$a:meta])* $name:ident(String)) => {
         $(#[$a])*
         #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct $name(String);
+        pub struct $name(pub String);
         impl Entry for $name {
             #[inline(always)]
             fn name() -> &'static str { stringify!($name) }
@@ -68,7 +68,7 @@ macro_rules! entry_type {
     ($(#[$a:meta])* $name:ident(Vec<String>)) => {
         $(#[$a])*
         #[derive(Debug, Clone, PartialEq, Eq)]
-        pub struct $name(Vec<String>);
+        pub struct $name(pub Vec<String>);
         impl Entry for $name {
             #[inline(always)]
             fn name() -> &'static str { stringify!($name) }
