@@ -1,10 +1,16 @@
 use std::process::{Command};
 use std::str;
+use std::os::unix::process::CommandExt;
 
 use regex::{self, Captures, Regex};
 
 use super::model::DesktopEntry;
 use super::entries::{Icon, Name};
+use desktop::entries::Exec;
+
+pub trait Executor {
+    fn execute(self) -> Result<(), Error>;
+}
 
 #[derive(Clone)]
 pub struct ExecContext<'a> {
@@ -16,11 +22,12 @@ pub struct ExecContext<'a> {
     args: &'a [String],
 }
 
-pub enum CommandParseError {
+pub enum Error {
     NoCommand,
     IncompleteEscape,
     IncompleteQuote,
-    MultipleFileArgs
+    MultipleFileArgs,
+    ExecuteFailed
 }
 
 fn split_command<'a>(command: &'a str) -> CommandWords<'a> {
@@ -34,9 +41,9 @@ struct CommandWords<'a> {
 }
 
 impl<'a> Iterator for CommandWords<'a> {
-    type Item = Result<String, CommandParseError>;
+    type Item = Result<String, Error>;
     fn next(&mut self) -> Option<Self::Item> {
-        use self::CommandParseError::*;
+        use self::Error::*;
         if self.inner.as_str().is_empty() {
             return None;
         }
@@ -99,8 +106,8 @@ impl<'a> regex::Replacer for ReplaceFlags<'a> {
     }
 }
 
-pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, CommandParseError> {
-    use self::CommandParseError::*;
+pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
+    use self::Error::*;
 
     lazy_static! {
         static ref FLAG_RE: Regex = Regex::new("%.").unwrap();
@@ -124,4 +131,36 @@ pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Com
         }
     }
     Ok(command)
+}
+
+pub struct CommandExecutor<'a> {
+    entry: &'a DesktopEntry,
+    command: Command
+}
+
+impl<'a> CommandExecutor<'a> {
+    pub fn new(entry: &'a DesktopEntry, args: &'a [String], path: Option<String>) -> Result<CommandExecutor<'a>, Error> {
+        let exec_str = entry.get::<Exec>().ok_or(Error::NoCommand)?;
+        let command = parse_command(&exec_str, &ExecContext {
+            source: entry,
+            source_path: path,
+            args
+        })?;
+        Ok(CommandExecutor {
+            entry,
+            command
+        })
+    }
+}
+
+impl<'a> Executor for CommandExecutor<'a> {
+    fn execute(mut self) -> Result<(), Error> {
+        // TODO: setup environment
+        self.command.exec();
+        Err(Error::ExecuteFailed)
+    }
+}
+
+pub fn execute(entry: &DesktopEntry, args: &[String], path: Option<String>) -> Result<(), Error> {
+    CommandExecutor::new(entry, args, path).and_then(Executor::execute)
 }
