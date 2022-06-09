@@ -9,8 +9,8 @@ extern crate regex;
 #[allow(dead_code)]
 mod desktop;
 
-use std::env;
 use desktop::*;
+use std::env;
 
 fn main() {
     let path = env::args().nth(1).unwrap();

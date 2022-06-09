@@ -1,13 +1,12 @@
 use std::ops::Deref;
-use std::string;
 use std::str::{FromStr, ParseBoolError};
+use std::string;
 
 /// Type representing a single entry in a group
 pub trait Entry: FromStr {
     /// The name of the entry
     ///
     /// This the string of the
-    #[inline(always)]
     fn name() -> &'static str;
 
     /// Deserialize an entry value from a string.
@@ -93,11 +92,13 @@ pub enum Type {
     Application,
     Link,
     Directory,
-    Unknown(String)
+    Unknown(String),
 }
 impl Entry for Type {
     #[inline(always)]
-    fn name() -> &'static str { "Type" }
+    fn name() -> &'static str {
+        "Type"
+    }
 }
 impl FromStr for Type {
     type Err = string::ParseError;
@@ -107,7 +108,7 @@ impl FromStr for Type {
             "Application" => Type::Application,
             "Link" => Type::Link,
             "Directory" => Type::Directory,
-            other => Type::Unknown(other.into())
+            other => Type::Unknown(other.into()),
         })
     }
 }
@@ -127,7 +128,7 @@ pub enum Category {
     Settings,
     System,
     Utility,
-    Custom(String)
+    Custom(String),
 }
 impl FromStr for Category {
     type Err = string::ParseError;
@@ -147,7 +148,7 @@ impl FromStr for Category {
             "Settings" => Settings,
             "System" => System,
             "Utility" => Utility,
-            other => Custom(other.into())
+            other => Custom(other.into()),
         })
     }
 }
@@ -156,13 +157,18 @@ impl FromStr for Category {
 pub struct Categories(Vec<Category>);
 impl Entry for Categories {
     #[inline(always)]
-    fn name() -> &'static str { "Categories" }
+    fn name() -> &'static str {
+        "Categories"
+    }
 }
 impl FromStr for Categories {
     type Err = string::ParseError;
     fn from_str(s: &str) -> Result<Categories, string::ParseError> {
         Ok(Categories(
-                util::split_value_str(s).map(|v| v.parse::<Category>().unwrap()).collect()))
+            util::split_value_str(s)
+                .map(|v| v.parse::<Category>().unwrap())
+                .collect(),
+        ))
     }
 }
 impl Deref for Categories {
@@ -203,9 +209,7 @@ pub mod util {
     /// as described in
     /// https://standards.freedesktop.org/desktop-entry-spec/latest/ar01s03.html
     pub fn split_value_str(s: &str) -> Values {
-        Values {
-            inner: s.chars()
-        }
+        Values { inner: s.chars() }
     }
 
     /// Unescape a string value
@@ -240,7 +244,7 @@ pub mod util {
     ///
     /// See `split_value_str`
     pub struct Values<'a> {
-        inner: Chars<'a>
+        inner: Chars<'a>,
     }
     impl<'a> Iterator for Values<'a> {
         type Item = String;
@@ -264,16 +268,14 @@ pub mod util {
                         }
                     },
                     ';' => return Some(value),
-                    _ => value.push(c)
+                    _ => value.push(c),
                 };
             }
             value.shrink_to_fit();
             Some(value)
         }
-
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -299,9 +301,7 @@ mod tests {
 
     #[test]
     fn split_value_str_escape_test() {
-        assert_strings_eq!(
-            split_value_str("\\s\\n\\t\\r\\\\\\a\\;"),
-            [" \n\t\r\\\\a;"]);
+        assert_strings_eq!(split_value_str("\\s\\n\\t\\r\\\\\\a\\;"), [" \n\t\r\\\\a;"]);
         assert_strings_eq!(split_value_str("a\\\\;b\\"), ["a\\", "b\\"]);
     }
 
@@ -309,7 +309,8 @@ mod tests {
     fn unescape_value_test() {
         assert_eq!(
             unescape_value("\\s\\n\\t\\r\\\\\\a\\;"),
-            " \n\t\r\\\\a\\;".to_string());
+            " \n\t\r\\\\a\\;".to_string()
+        );
         assert_eq!(unescape_value("a\\"), "a\\".to_string());
     }
 }

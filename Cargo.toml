@@ -3,6 +3,7 @@ name = "dopen"
 version = "0.1.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 description = "CLI to execute .desktop files"
+edition = "2021"
 
 [lib]
 name = "libdopen"
@@ -16,14 +17,12 @@ required-features = ["clap"]
 [dependencies]
 # This should only be a dependency of the binary, but cargo doesn't support
 # that yet
-clap = {version = "2.26.2", optional = true}
+clap = {version = "3.1.18", optional = true}
 # These are depenencies of nom
 # but are needed because
 # macro hygiene isn't good enough
 # to encompass the dependency
-lazy_static = "0.2.9"
-regex = "0.2.2"
-
-[dependencies.nom]
-version = "3.2.0"
-features = [ "regexp_macros" ]
+once_cell = "1.12.0"
+regex = "1.5.6"
+nom = "7.1.1"
+nom-regex = "0.2"

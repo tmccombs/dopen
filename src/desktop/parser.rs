@@ -4,26 +4,33 @@ use std::io;
 use std::path::Path;
 use std::str;
 
-use nom::{ErrorKind, IResult};
-use nom::IResult::{Done, Error};
+use nom::{
+    bytes::complete::take_while,
+    character::complete::{char, space0},
+    combinator::{all_consuming, eof, map, map_res, value},
+    multi::{fold_many0, many0},
+    sequence::{delimited, preceded, separated_pair, terminated},
+    Finish, InputTakeAtPosition, Parser,
+};
+use nom_regex::bytes::re_find;
+use once_cell::sync::OnceCell;
+use regex::bytes::Regex;
 
-use super::model::*;
 use super::error::*;
+use super::model::*;
 
 pub type ParseResult = Result<DesktopEntry, ParseError>;
 
-const NON_UTF8: ErrorKind = ErrorKind::Custom(1);
+type IResult<'a, T> = nom::IResult<&'a [u8], T, ParseError>;
 
 /// Parse a slice of bytes into a `DesktopEntry`.
 ///
 /// This parses a .desktop file (or similar) into a `DesktopEntry`.
 /// If it is unable to successfully parse it returns an `Err`
 pub fn parse<T: AsRef<[u8]>>(input: T) -> ParseResult {
-    match desktop_entry(input.as_ref()) {
-        Done(_, entry) => Ok(entry),
-        Error(NON_UTF8) => Err(ParseError::NonUtf8),
-        _ => Err(ParseError::Syntax),
-    }
+    all_consuming(desktop_entry)(input.as_ref())
+        .finish()
+        .map(|(_, e)| e)
 }
 
 pub fn parse_io<T: io::Read>(input: &mut T) -> ParseResult {
@@ -38,65 +45,76 @@ pub fn parse_file<T: AsRef<Path>>(path: T) -> ParseResult {
     parse_io(&mut File::open(path)?)
 }
 
-named!(desktop_entry<DesktopEntry>, dbg!(do_parse!(
-        dbg!(blanks) >>
-        groups: dbg!(many0!(group)) >>
-        dbg!(eof!()) >>
-        (DesktopEntry::new(groups)))));
+fn desktop_entry(input: &[u8]) -> IResult<DesktopEntry> {
+    preceded(blanks, map(many0(group), DesktopEntry::new))(input)
+}
 
-named!(group<Group>, do_parse!(
-        name: map_res!(header, str::from_utf8) >>
-        char!('\n') >>
-        values: key_value_list >>
-        blanks >>
-        (Group::new(name.into(), values))));
+fn group(i: &[u8]) -> IResult<Group> {
+    let header = delimited(char('['), take_while(is_header_char), char(']'));
 
-named!(header, delimited!(char!('['), take_while!(is_header_char), char!(']')));
+    let (i, name) = map_res(header, str::from_utf8)(i)?;
+    let (i, values) = delimited(char('\n'), key_value_list, blanks)(i)?;
+    Ok((i, Group::new(name.into(), values)))
+}
 
-named!(space, eat_separator!(&b" \t"[..]));
-named!(endline<char>, alt!(value!('\0', eof!()) | char!('\n')));
 // If we ever support serialization, we need a way to preserve comments
-named!(comment, delimited!(char!('#'), is_not!(&b"\n"[..]), endline));
-named!(empty_line, do_parse!(sp: space >> char!('\n') >> (sp)));
-named!(blanks<()>, fold_many0!(alt!(comment | empty_line), (), |_,_| ()));
+fn comment(i: &[u8]) -> IResult<&[u8]> {
+    let endline = char('\n').or(value('\0', eof));
+    delimited(char('#'), take_while(|c| c != b'\n'), endline)(i)
+}
+fn blanks(i: &[u8]) -> IResult<()> {
+    let empty_line = terminated(space0, char('\n'));
+    fold_many0(empty_line.or(comment), || (), |_, _| ())(i)
+}
 
-named!(key_value_list<HashMap<String, String>>, fold_many0!(
+fn key_value_list(i: &[u8]) -> IResult<HashMap<String, String>> {
+    fold_many0(
         entry,
-        HashMap::new(),
-        |mut acc: HashMap<String, String>, item: (String, String)| {
+        || HashMap::new(),
+        |mut acc, item| {
             acc.insert(item.0, item.1);
             acc
-        }));
+        },
+    )(i)
+}
 
-named!(entry<(String, String)>, do_parse!(
-        blanks >>
-        key:  entry_key >>
-        space >>
-        char!('=') >>
-        space >>
-        value: entry_value >>
-        (key, value)));
+fn entry(i: &[u8]) -> IResult<(String, String)> {
+    eprintln!("parsing entry: {}", str::from_utf8(i).unwrap_or(""));
+    separated_pair(
+        preceded(blanks, entry_key),
+        delimited(space0, char('='), space0),
+        entry_value,
+    )(i)
+}
 
-const KEY_RE: &'static str = r"[A-Za-z0-9-]+(\[[a-z]{2}(_[A-Z]{2})?(.[A-Za-z0-9-]+)?(@[A-Za-z09-]+)?\])?";
+const KEY_RE: &'static str =
+    r"^[A-Za-z0-9-]+(\[[a-z]{2}(_[A-Z]{2})?(.[A-Za-z0-9-]+)?(@[A-Za-z09-]+)?\])?";
 
-named!(entry_key<String>, map!(re_bytes_find_static!(KEY_RE), |name| {
-    use std::ascii::AsciiExt;
-    // regex already garantees name is ascii
-    let mut s = unsafe { str::from_utf8_unchecked(name).to_owned() };
-    // name is case-insensitive, so lowercase it
-    s.as_mut_str().make_ascii_lowercase();
-    s
-}));
+fn entry_key(i: &[u8]) -> IResult<String> {
+    static RE_CELL: OnceCell<Regex> = OnceCell::new();
+    let key_re = RE_CELL.get_or_init(|| Regex::new(KEY_RE).unwrap());
 
-fn entry_value(input: &[u8]) -> IResult<&[u8], String> {
-    let (line, rest) = match input.iter().position(|&c| c == b'\n') {
-        Some(p) => (&input[..p], &input[(p + 1)..]),
-        None => (input, &[][..])
-    };
-    if let Ok(line) = str::from_utf8(line) {
-        Done(rest, line.to_string())
-    } else {
-        Error(NON_UTF8)
+    re_find(key_re.clone())
+        .map(|name| {
+            // regex already garantees name is ascii
+            let mut s = unsafe { str::from_utf8_unchecked(name) }.to_owned();
+            eprintln!("got name: {}", s);
+            // name is case-insensitive, so lowercase it
+            s.as_mut_str().make_ascii_lowercase();
+            s
+        })
+        .parse(i)
+}
+
+fn entry_value(i: &[u8]) -> IResult<String> {
+    let (mut rest, line) = i.split_at_position_complete(|c| c == b'\n')?;
+    if !rest.is_empty() {
+        rest = &rest[1..];
+    }
+    match str::from_utf8(line) {
+        //
+        Ok(line) => Ok((rest, line.to_string())),
+        Err(_) => Err(nom::Err::Failure(ParseError::NonUtf8)),
     }
 }
 
@@ -121,27 +139,31 @@ mod test {
 
     #[test]
     fn entry_value_test_empty() {
-        assert_eq!(entry_value(&[][..]), Done(&[][..], "".to_string()));
+        assert_eq!(entry_value(&[][..]), Ok((&[][..], "".to_string())));
     }
 
     #[test]
     fn entry_value_test_basic() {
         assert_eq!(
             entry_value(&b"A simple value"[..]),
-            Done(&b""[..], "A simple value".to_string()));
+            Ok((&b""[..], "A simple value".to_string()))
+        );
         assert_eq!(
             entry_value(&b"A simple value\n"[..]),
-            Done(&b""[..], "A simple value".to_string()));
+            Ok((&b""[..], "A simple value".to_string()))
+        );
     }
 
     #[test]
     fn entry_value_test_escapes() {
         assert_eq!(
             entry_value(&b"\\s\\n\\t\\r\\\\\\a"[..]),
-            Done(&b""[..], "\\s\\n\\t\\r\\\\\\a".to_string()));
+            Ok((&b""[..], "\\s\\n\\t\\r\\\\\\a".to_string()))
+        );
         assert_eq!(
             entry_value(&b"Content with trailing slash \\"[..]),
-            Done(&b""[..], "Content with trailing slash \\".to_string()))
+            Ok((&b""[..], "Content with trailing slash \\".to_string()))
+        )
     }
 
     #[test]
@@ -154,25 +176,32 @@ mod test {
     fn entry_key_test_locales() {
         assert_eq!(
             entry_key(&b"Name[en_US.UTF-8@shaw]"[..]),
-            Done(&b""[..], "name[en_us.utf-8@shaw]".to_string()));
+            Ok((&b""[..], "name[en_us.utf-8@shaw]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en_US.UTF-8]"[..]),
-            Done(&b""[..], "name[en_us.utf-8]".to_string()));
+            Ok((&b""[..], "name[en_us.utf-8]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en_US@shaw]"[..]),
-            Done(&b""[..], "name[en_us@shaw]".to_string()));
+            Ok((&b""[..], "name[en_us@shaw]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en.UTF-8@shaw]"[..]),
-            Done(&b""[..], "name[en.utf-8@shaw]".to_string()));
+            Ok((&b""[..], "name[en.utf-8@shaw]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en_US]"[..]),
-            Done(&b""[..], "name[en_us]".to_string()));
+            Ok((&b""[..], "name[en_us]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en.UTF-8]"[..]),
-            Done(&b""[..], "name[en.utf-8]".to_string()));
+            Ok((&b""[..], "name[en.utf-8]".to_string()))
+        );
         assert_eq!(
             entry_key(&b"Name[en@shaw]"[..]),
-            Done(&b""[..], "name[en@shaw]".to_string()));
+            Ok((&b""[..], "name[en@shaw]".to_string()))
+        );
     }
 
     #[test]
@@ -188,14 +217,17 @@ Value3=false
 # Floating point
 Value4=5.6"[..];
 
-        let expected = DesktopEntry::new(vec!(Group::new("Desktop Entry".into(), hash!{
-            "value1".to_string() => "Some value".to_string(),
-            "value2".to_string() => "true".to_string(),
-            "value3".to_string() => "false".to_string(),
-            "value4".to_string() => "5.6".to_string()
-        })));
+        let expected = DesktopEntry::new(vec![Group::new(
+            "Desktop Entry".into(),
+            hash! {
+                "value1".to_string() => "Some value".to_string(),
+                "value2".to_string() => "true".to_string(),
+                "value3".to_string() => "false".to_string(),
+                "value4".to_string() => "5.6".to_string()
+            },
+        )]);
 
-        assert_eq!(desktop_entry(bytes), Done(&b""[..], expected));
+        assert_eq!(desktop_entry(bytes), Ok((&b""[..], expected)));
     }
 
     #[test]
@@ -213,17 +245,24 @@ Comment=Stuff
 Comment[en]=Stuff
 Comment[de]=Zeug";
 
-        let expected = DesktopEntry::new(vec!(
-                Group::new("Desktop Entry".into(), hash!{
+        let expected = DesktopEntry::new(vec![
+            Group::new(
+                "Desktop Entry".into(),
+                hash! {
                     "exe".to_string() => "env A=a B=b sample-prog --foo --bar".to_string(),
                     "directory".to_string() => "/etc/foo".to_string(),
                     "enabled".to_string() => "true".to_string()
-                }),
-                Group::new("Sample".into(), hash!{
+                },
+            ),
+            Group::new(
+                "Sample".into(),
+                hash! {
                     "comment".to_string() => "Stuff".to_string(),
                     "comment[en]".to_string() => "Stuff".to_string(),
                     "comment[de]".to_string() => "Zeug".to_string()
-                })));
+                },
+            ),
+        ]);
         assert_eq!(parse(input).unwrap(), expected);
     }
 }

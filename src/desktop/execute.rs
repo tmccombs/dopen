@@ -1,12 +1,13 @@
-use std::process::{Command};
-use std::str;
 use std::os::unix::process::CommandExt;
+use std::process::Command;
+use std::str;
 
+use once_cell::sync::OnceCell;
 use regex::{self, Captures, Regex};
 
-use super::model::DesktopEntry;
 use super::entries::{Icon, Name};
-use desktop::entries::Exec;
+use super::model::DesktopEntry;
+use crate::entries::Exec;
 
 pub trait Executor {
     fn execute(self) -> Result<(), Error>;
@@ -27,17 +28,17 @@ pub enum Error {
     IncompleteEscape,
     IncompleteQuote,
     MultipleFileArgs,
-    ExecuteFailed
+    ExecuteFailed,
 }
 
 fn split_command<'a>(command: &'a str) -> CommandWords<'a> {
     CommandWords {
-        inner: command.chars()
+        inner: command.chars(),
     }
 }
 
 struct CommandWords<'a> {
-    inner: str::Chars<'a>
+    inner: str::Chars<'a>,
 }
 
 impl<'a> Iterator for CommandWords<'a> {
@@ -88,18 +89,26 @@ impl<'a> regex::Replacer for ReplaceFlags<'a> {
         match &cap[0] {
             // FIXME: this is actually supposed to use seperate commands for each
             // argument
-            "%f" | "%u" => if let Some(f) = self.0.args.first() {
-                dst.push_str(f);
-            },
-            "%i" => if let Some(Icon(i)) = self.0.source.get::<Icon>() {
-                dst.push_str(&i);
-            },
-            "%c" => if let Some(Name(n)) = self.0.source.get::<Name>() {
-                dst.push_str(&n);
-            },
-            "%k" => if let Some(ref p) = self.0.source_path {
-                dst.push_str(p);
-            },
+            "%f" | "%u" => {
+                if let Some(f) = self.0.args.first() {
+                    dst.push_str(f);
+                }
+            }
+            "%i" => {
+                if let Some(Icon(i)) = self.0.source.get::<Icon>() {
+                    dst.push_str(&i);
+                }
+            }
+            "%c" => {
+                if let Some(Name(n)) = self.0.source.get::<Name>() {
+                    dst.push_str(&n);
+                }
+            }
+            "%k" => {
+                if let Some(ref p) = self.0.source_path {
+                    dst.push_str(p);
+                }
+            }
             "%%" => dst.push('%'),
             _ => {} // unrecognized flag
         }
@@ -109,9 +118,8 @@ impl<'a> regex::Replacer for ReplaceFlags<'a> {
 pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
     use self::Error::*;
 
-    lazy_static! {
-        static ref FLAG_RE: Regex = Regex::new("%.").unwrap();
-    }
+    static FLAG_RE: OnceCell<Regex> = OnceCell::new();
+    let flag_re = FLAG_RE.get_or_init(|| Regex::new("%.").unwrap());
 
     let mut words = split_command(command);
     let bin = words.next().unwrap_or(Err(NoCommand))?;
@@ -121,12 +129,12 @@ pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Com
         let arg = arg?;
         if arg == "%F" || arg == "%U" {
             if had_file_or_url {
-                return Err(MultipleFileArgs)
+                return Err(MultipleFileArgs);
             }
             command.args(context.args);
             had_file_or_url = true;
         } else {
-            let replaced = FLAG_RE.replace_all(&arg, ReplaceFlags(context));
+            let replaced = flag_re.replace_all(&arg, ReplaceFlags(context));
             command.arg(replaced.as_ref());
         }
     }
@@ -135,21 +143,25 @@ pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Com
 
 pub struct CommandExecutor<'a> {
     entry: &'a DesktopEntry,
-    command: Command
+    command: Command,
 }
 
 impl<'a> CommandExecutor<'a> {
-    pub fn new(entry: &'a DesktopEntry, args: &'a [String], path: Option<String>) -> Result<CommandExecutor<'a>, Error> {
+    pub fn new(
+        entry: &'a DesktopEntry,
+        args: &'a [String],
+        path: Option<String>,
+    ) -> Result<CommandExecutor<'a>, Error> {
         let exec_str = entry.get::<Exec>().ok_or(Error::NoCommand)?;
-        let command = parse_command(&exec_str, &ExecContext {
-            source: entry,
-            source_path: path,
-            args
-        })?;
-        Ok(CommandExecutor {
-            entry,
-            command
-        })
+        let command = parse_command(
+            &exec_str,
+            &ExecContext {
+                source: entry,
+                source_path: path,
+                args,
+            },
+        )?;
+        Ok(CommandExecutor { entry, command })
     }
 }
 
