@@ -23,6 +23,7 @@ pub struct ExecContext<'a> {
     args: &'a [String],
 }
 
+#[derive(Debug)]
 pub enum Error {
     NoCommand,
     IncompleteEscape,
