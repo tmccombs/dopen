@@ -12,13 +12,9 @@ name = "libdopen"
 name = "dopen"
 doc = false
 test = false
-required-features = ["clap"]
 
 [dependencies]
-# This should only be a dependency of the binary, but cargo doesn't support
-# that yet
-clap = {version = "3.1.18", optional = true}
-# These are depenencies of nom
+# These are dependencies of nom
 # but are needed because
 # macro hygiene isn't good enough
 # to encompass the dependency

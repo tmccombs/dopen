@@ -1,9 +1,6 @@
-// extern crate clap;
 #[macro_use]
 extern crate nom;
 // we shouldn't really need these
-#[macro_use]
-extern crate lazy_static;
 extern crate regex;
 
 #[allow(dead_code)]
@@ -12,6 +9,8 @@ mod desktop;
 use desktop::*;
 use std::env;
 use std::process;
+
+use execute::execute;
 
 fn main() {
     let mut args = env::args();
