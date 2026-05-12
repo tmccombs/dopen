@@ -208,3 +208,60 @@ impl<'a> Executor for CommandExecutor<'a> {
 pub fn execute(entry: &DesktopEntry, args: &[String], path: Option<String>) -> Result<(), Error> {
     CommandExecutor::new(entry, args, path).and_then(Executor::execute)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::desktop::model::{Group, DESKTOP_ENTRY_NAME};
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    fn desktop_entry(values: &[(&str, &str)]) -> DesktopEntry {
+        let values = values
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect::<HashMap<_, _>>();
+        DesktopEntry::new(vec![Group::new(DESKTOP_ENTRY_NAME.to_string(), values)])
+    }
+
+    fn args(command: &Command) -> Vec<String> {
+        command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn build_command_expands_desktop_field_codes() {
+        let entry = desktop_entry(&[
+            ("Exec", "/bin/echo \"%c\" %F %% %k %i"),
+            ("Name", "Demo App"),
+            ("Icon", "demo-icon"),
+        ]);
+        let input_args = vec!["first.txt".to_string(), "second.txt".to_string()];
+        let command =
+            CommandExecutor::new(&entry, &input_args, Some("demo.desktop".to_string())).unwrap();
+
+        assert_eq!(command.command.get_program(), "/bin/echo");
+        assert_eq!(
+            args(&command.command),
+            vec![
+                "Demo App",
+                "first.txt",
+                "second.txt",
+                "%",
+                "demo.desktop",
+                "--icon",
+                "demo-icon"
+            ]
+        );
+    }
+
+    #[test]
+    fn command_executor_uses_desktop_entry_working_directory() {
+        let entry = desktop_entry(&[("Exec", "/bin/echo hello"), ("Path", "/tmp")]);
+        let command = CommandExecutor::new(&entry, &[], None).unwrap();
+
+        assert_eq!(command.command.get_current_dir(), Some(Path::new("/tmp")));
+    }
+}
