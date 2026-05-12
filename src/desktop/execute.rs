@@ -2,8 +2,8 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::str;
 
-use once_cell::sync::OnceCell;
 use regex::{self, Captures, Regex};
+use std::sync::OnceLock;
 
 use super::entries::{Icon, Name};
 use super::model::DesktopEntry;
@@ -119,7 +119,7 @@ impl<'a> regex::Replacer for ReplaceFlags<'a> {
 pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
     use self::Error::*;
 
-    static FLAG_RE: OnceCell<Regex> = OnceCell::new();
+    static FLAG_RE: OnceLock<Regex> = OnceLock::new();
     let flag_re = FLAG_RE.get_or_init(|| Regex::new("%.").unwrap());
 
     let mut words = split_command(command);

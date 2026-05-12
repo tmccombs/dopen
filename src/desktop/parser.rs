@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io;
 use std::path::Path;
 use std::str;
+use std::sync::OnceLock;
 
 use nom::{
     bytes::complete::take_while,
@@ -13,7 +14,6 @@ use nom::{
     Finish, InputTakeAtPosition, Parser,
 };
 use nom_regex::bytes::re_find;
-use once_cell::sync::OnceCell;
 use regex::bytes::Regex;
 
 use super::error::*;
@@ -86,7 +86,7 @@ fn entry(i: &[u8]) -> IResult<'_, (String, String)> {
 const KEY_RE: &str = r"^[A-Za-z0-9-]+(\[[a-z]{2}(_[A-Z]{2})?(.[A-Za-z0-9-]+)?(@[A-Za-z09-]+)?\])?";
 
 fn entry_key(i: &[u8]) -> IResult<'_, String> {
-    static RE_CELL: OnceCell<Regex> = OnceCell::new();
+    static RE_CELL: OnceLock<Regex> = OnceLock::new();
     let key_re = RE_CELL.get_or_init(|| Regex::new(KEY_RE).unwrap());
 
     re_find(key_re.clone())
