@@ -45,11 +45,11 @@ pub fn parse_file<T: AsRef<Path>>(path: T) -> ParseResult {
     parse_io(&mut File::open(path)?)
 }
 
-fn desktop_entry(input: &[u8]) -> IResult<DesktopEntry> {
+fn desktop_entry(input: &[u8]) -> IResult<'_, DesktopEntry> {
     preceded(blanks, map(many0(group), DesktopEntry::new))(input)
 }
 
-fn group(i: &[u8]) -> IResult<Group> {
+fn group(i: &[u8]) -> IResult<'_, Group> {
     let header = delimited(char('['), take_while(is_header_char), char(']'));
 
     let (i, name) = map_res(header, str::from_utf8)(i)?;
@@ -58,27 +58,23 @@ fn group(i: &[u8]) -> IResult<Group> {
 }
 
 // If we ever support serialization, we need a way to preserve comments
-fn comment(i: &[u8]) -> IResult<&[u8]> {
+fn comment(i: &[u8]) -> IResult<'_, &[u8]> {
     let endline = char('\n').or(value('\0', eof));
     delimited(char('#'), take_while(|c| c != b'\n'), endline)(i)
 }
-fn blanks(i: &[u8]) -> IResult<()> {
+fn blanks(i: &[u8]) -> IResult<'_, ()> {
     let empty_line = terminated(space0, char('\n'));
     fold_many0(empty_line.or(comment), || (), |_, _| ())(i)
 }
 
-fn key_value_list(i: &[u8]) -> IResult<HashMap<String, String>> {
-    fold_many0(
-        entry,
-        || HashMap::new(),
-        |mut acc, item| {
-            acc.insert(item.0, item.1);
-            acc
-        },
-    )(i)
+fn key_value_list(i: &[u8]) -> IResult<'_, HashMap<String, String>> {
+    fold_many0(entry, HashMap::new, |mut acc, item| {
+        acc.insert(item.0, item.1);
+        acc
+    })(i)
 }
 
-fn entry(i: &[u8]) -> IResult<(String, String)> {
+fn entry(i: &[u8]) -> IResult<'_, (String, String)> {
     eprintln!("parsing entry: {}", str::from_utf8(i).unwrap_or(""));
     separated_pair(
         preceded(blanks, entry_key),
@@ -87,10 +83,9 @@ fn entry(i: &[u8]) -> IResult<(String, String)> {
     )(i)
 }
 
-const KEY_RE: &'static str =
-    r"^[A-Za-z0-9-]+(\[[a-z]{2}(_[A-Z]{2})?(.[A-Za-z0-9-]+)?(@[A-Za-z09-]+)?\])?";
+const KEY_RE: &str = r"^[A-Za-z0-9-]+(\[[a-z]{2}(_[A-Z]{2})?(.[A-Za-z0-9-]+)?(@[A-Za-z09-]+)?\])?";
 
-fn entry_key(i: &[u8]) -> IResult<String> {
+fn entry_key(i: &[u8]) -> IResult<'_, String> {
     static RE_CELL: OnceCell<Regex> = OnceCell::new();
     let key_re = RE_CELL.get_or_init(|| Regex::new(KEY_RE).unwrap());
 
@@ -106,7 +101,7 @@ fn entry_key(i: &[u8]) -> IResult<String> {
         .parse(i)
 }
 
-fn entry_value(i: &[u8]) -> IResult<String> {
+fn entry_value(i: &[u8]) -> IResult<'_, String> {
     let (mut rest, line) = i.split_at_position_complete(|c| c == b'\n')?;
     if !rest.is_empty() {
         rest = &rest[1..];
@@ -121,7 +116,7 @@ fn entry_value(i: &[u8]) -> IResult<String> {
 fn is_header_char(c: u8) -> bool {
     // any ASCII char that isn't a control acharacter
     // or a square bracket
-    c >= 32 && c < 127 && c != b'[' && c != b']'
+    (32u8..127u8).contains(&c) && c != b'[' && c != b']'
 }
 
 #[cfg(test)]

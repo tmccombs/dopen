@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate nom;
 // we shouldn't really need these
 extern crate regex;
 

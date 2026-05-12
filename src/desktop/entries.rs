@@ -58,9 +58,9 @@ macro_rules! entry_type {
                 &self.0
             }
         }
-        impl ToString for $name {
-            fn to_string(&self) -> String {
-                self.0.clone()
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                self.0.fmt(f)
             }
         }
     };
@@ -198,7 +198,11 @@ entry_type!(Implements(Vec<String>));
 entry_type!(Keywords(Vec<String>));
 entry_type!(StartupNotify(bool));
 entry_type!(StartupWMClass(String));
-entry_type!(URL(String));
+entry_type!(
+    // we need the name to match the specification.
+    #[allow(clippy::upper_case_acronyms)]
+    URL(String)
+);
 
 pub mod util {
     use std::str::Chars;
@@ -208,7 +212,7 @@ pub mod util {
     /// This split a string value into a `Vec` for multiple values
     /// as described in
     /// https://standards.freedesktop.org/desktop-entry-spec/latest/ar01s03.html
-    pub fn split_value_str(s: &str) -> Values {
+    pub fn split_value_str(s: &str) -> Values<'_> {
         Values { inner: s.chars() }
     }
 

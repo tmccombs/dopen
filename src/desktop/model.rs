@@ -4,7 +4,7 @@ use std::slice;
 
 use super::entries::Entry;
 
-pub const DESKTOP_ENTRY_NAME: &'static str = "Desktop Entry";
+pub const DESKTOP_ENTRY_NAME: &str = "Desktop Entry";
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Group {
@@ -14,10 +14,7 @@ pub struct Group {
 
 impl Group {
     pub fn new(name: String, values: HashMap<String, String>) -> Group {
-        Group {
-            name: name,
-            values: values,
-        }
+        Group { name, values }
     }
 
     pub fn name(&self) -> &str {
@@ -60,7 +57,7 @@ impl DesktopEntry {
     }
 
     /// Get an iterator over all groups in the entry
-    pub fn groups(&self) -> slice::Iter<Group> {
+    pub fn groups(&self) -> slice::Iter<'_, Group> {
         self.0.iter()
     }
 

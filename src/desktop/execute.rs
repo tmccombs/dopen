@@ -29,7 +29,7 @@ pub enum Error {
     IncompleteEscape,
     IncompleteQuote,
     MultipleFileArgs,
-    ExecuteFailed,
+    ExecuteFailed(std::io::Error),
 }
 
 fn split_command<'a>(command: &'a str) -> CommandWords<'a> {
@@ -52,7 +52,7 @@ impl<'a> Iterator for CommandWords<'a> {
         let mut result = String::with_capacity(self.inner.as_str().len());
         let mut escaping = false;
         let mut in_quotes = false;
-        while let Some(c) = self.inner.next() {
+        for c in self.inner.by_ref() {
             match c {
                 '"' if !escaping => in_quotes = !in_quotes,
                 '\\' if in_quotes => {
@@ -164,13 +164,17 @@ impl<'a> CommandExecutor<'a> {
         )?;
         Ok(CommandExecutor { entry, command })
     }
+
+    pub fn entry(&self) -> &DesktopEntry {
+        self.entry
+    }
 }
 
 impl<'a> Executor for CommandExecutor<'a> {
     fn execute(mut self) -> Result<(), Error> {
         // TODO: setup environment
-        self.command.exec();
-        Err(Error::ExecuteFailed)
+        let err = self.command.exec();
+        Err(Error::ExecuteFailed(err))
     }
 }
 
