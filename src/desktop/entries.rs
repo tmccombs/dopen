@@ -39,6 +39,7 @@ macro_rules! entry_type {
         }
     };
     ($(#[$a:meta])* $name:ident(String)) => {
+        // TODO: use Cow instead of String?
         $(#[$a])*
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub struct $name(pub String);

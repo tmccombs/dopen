@@ -36,10 +36,7 @@ impl Group {
     }
 
     pub fn get_raw(&self, name: &str) -> Option<&str> {
-        // name is case insensitive
-        self.values
-            .get(&name.to_ascii_lowercase())
-            .map(String::as_str)
+        self.values.get(name).map(String::as_str)
     }
 }
 

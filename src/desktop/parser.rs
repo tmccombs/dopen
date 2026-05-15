@@ -36,12 +36,10 @@ pub fn parse<T: AsRef<[u8]>>(input: T) -> ParseResult {
 pub fn parse_io<T: io::Read>(input: &mut T) -> ParseResult {
     let mut buf = Vec::new();
     input.read_to_end(&mut buf)?;
-    println!("Read: {}", str::from_utf8(&buf).unwrap());
     parse(buf)
 }
 
 pub fn parse_file<T: AsRef<Path>>(path: T) -> ParseResult {
-    println!("Path: {:?}", path.as_ref());
     parse_io(&mut File::open(path)?)
 }
 
@@ -92,11 +90,7 @@ fn entry_key(i: &[u8]) -> IResult<'_, String> {
     re_find(key_re.clone())
         .map(|name| {
             // regex already garantees name is ascii
-            let mut s = unsafe { str::from_utf8_unchecked(name) }.to_owned();
-            eprintln!("got name: {}", s);
-            // name is case-insensitive, so lowercase it
-            s.as_mut_str().make_ascii_lowercase();
-            s
+            unsafe { str::from_utf8_unchecked(name) }.to_owned()
         })
         .parse(i)
 }
@@ -171,31 +165,31 @@ mod test {
     fn entry_key_test_locales() {
         assert_eq!(
             entry_key(&b"Name[en_US.UTF-8@shaw]"[..]),
-            Ok((&b""[..], "name[en_us.utf-8@shaw]".to_string()))
+            Ok((&b""[..], "Name[en_US.UTF-8@shaw]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en_US.UTF-8]"[..]),
-            Ok((&b""[..], "name[en_us.utf-8]".to_string()))
+            Ok((&b""[..], "Name[en_US.UTF-8]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en_US@shaw]"[..]),
-            Ok((&b""[..], "name[en_us@shaw]".to_string()))
+            Ok((&b""[..], "Name[en_US@shaw]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en.UTF-8@shaw]"[..]),
-            Ok((&b""[..], "name[en.utf-8@shaw]".to_string()))
+            Ok((&b""[..], "Name[en.UTF-8@shaw]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en_US]"[..]),
-            Ok((&b""[..], "name[en_us]".to_string()))
+            Ok((&b""[..], "Name[en_US]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en.UTF-8]"[..]),
-            Ok((&b""[..], "name[en.utf-8]".to_string()))
+            Ok((&b""[..], "Name[en.UTF-8]".to_string()))
         );
         assert_eq!(
             entry_key(&b"Name[en@shaw]"[..]),
-            Ok((&b""[..], "name[en@shaw]".to_string()))
+            Ok((&b""[..], "Name[en@shaw]".to_string()))
         );
     }
 
@@ -215,10 +209,10 @@ Value4=5.6"[..];
         let expected = DesktopEntry::new(vec![Group::new(
             "Desktop Entry".into(),
             hash! {
-                "value1".to_string() => "Some value".to_string(),
-                "value2".to_string() => "true".to_string(),
-                "value3".to_string() => "false".to_string(),
-                "value4".to_string() => "5.6".to_string()
+                "Value1".to_string() => "Some value".to_string(),
+                "Value2".to_string() => "true".to_string(),
+                "Value3".to_string() => "false".to_string(),
+                "Value4".to_string() => "5.6".to_string()
             },
         )]);
 
@@ -230,7 +224,7 @@ Value4=5.6"[..];
         let input = "\
 [Desktop Entry]
 #A comment
-Exe=env A=a B=b sample-prog --foo --bar
+Exec=env A=a B=b sample-prog --foo --bar
 Directory = /etc/foo
 # A boolean value
 Enabled=true
@@ -244,17 +238,17 @@ Comment[de]=Zeug";
             Group::new(
                 "Desktop Entry".into(),
                 hash! {
-                    "exe".to_string() => "env A=a B=b sample-prog --foo --bar".to_string(),
-                    "directory".to_string() => "/etc/foo".to_string(),
-                    "enabled".to_string() => "true".to_string()
+                    "Exec".to_string() => "env A=a B=b sample-prog --foo --bar".to_string(),
+                    "Directory".to_string() => "/etc/foo".to_string(),
+                    "Enabled".to_string() => "true".to_string()
                 },
             ),
             Group::new(
                 "Sample".into(),
                 hash! {
-                    "comment".to_string() => "Stuff".to_string(),
-                    "comment[en]".to_string() => "Stuff".to_string(),
-                    "comment[de]".to_string() => "Zeug".to_string()
+                    "Comment".to_string() => "Stuff".to_string(),
+                    "Comment[en]".to_string() => "Stuff".to_string(),
+                    "Comment[de]".to_string() => "Zeug".to_string()
                 },
             ),
         ]);
