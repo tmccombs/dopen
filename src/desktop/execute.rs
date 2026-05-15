@@ -2,9 +2,6 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::str;
 
-use regex::{self, Captures, Regex};
-use std::sync::OnceLock;
-
 use super::entries::{Icon, Name};
 use super::model::DesktopEntry;
 use crate::entries::Exec;
@@ -29,6 +26,7 @@ pub enum Error {
     IncompleteEscape,
     IncompleteQuote,
     MultipleFileArgs,
+    InvalidFieldCode(char),
     ExecuteFailed(std::io::Error),
 }
 
@@ -82,61 +80,86 @@ impl<'a> Iterator for CommandWords<'a> {
     }
 }
 
-struct ReplaceFlags<'a>(&'a ExecContext<'a>);
-
-impl<'a> regex::Replacer for ReplaceFlags<'a> {
-    fn replace_append(&mut self, cap: &Captures, dst: &mut String) {
-        // FIXME? should we localize icon and name?
-        match &cap[0] {
-            // FIXME: this is actually supposed to use seperate commands for each
-            // argument
-            "%f" | "%u" => {
-                if let Some(f) = self.0.args.first() {
-                    dst.push_str(f);
-                }
-            }
-            "%i" => {
-                if let Some(Icon(i)) = self.0.source.get::<Icon>() {
-                    dst.push_str(&i);
-                }
-            }
-            "%c" => {
-                if let Some(Name(n)) = self.0.source.get::<Name>() {
-                    dst.push_str(&n);
-                }
-            }
-            "%k" => {
-                if let Some(ref p) = self.0.source_path {
-                    dst.push_str(p);
-                }
-            }
-            "%%" => dst.push('%'),
-            _ => {} // unrecognized flag
-        }
-    }
-}
+// TODO: test for parse_command
 
 pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
     use self::Error::*;
 
-    static FLAG_RE: OnceLock<Regex> = OnceLock::new();
-    let flag_re = FLAG_RE.get_or_init(|| Regex::new("%.").unwrap());
-
+    eprintln!("command={}", command);
     let mut words = split_command(command);
     let bin = words.next().unwrap_or(Err(NoCommand))?;
     let mut command = Command::new(&bin);
     let mut had_file_or_url = false;
-    for arg in words {
+    'arg_loop: for arg in words {
         let arg = arg?;
-        if arg == "%F" || arg == "%U" {
-            if had_file_or_url {
-                return Err(MultipleFileArgs);
+        match arg.as_ref() {
+            // %F, %U, and %i can only be used as arguments on their own.
+            "%F" | "%U" => {
+                if had_file_or_url {
+                    return Err(MultipleFileArgs);
+                }
+                had_file_or_url = true;
+                command.args(context.args);
             }
-            command.args(context.args);
-            had_file_or_url = true;
-        } else {
-            let replaced = flag_re.replace_all(&arg, ReplaceFlags(context));
-            command.arg(replaced.as_ref());
+            // FIXME: should we localize the icon?
+            "%i" => {
+                if let Some(Icon(icon)) = context.source.get() {
+                    command.arg("--icon");
+                    command.arg(icon);
+                }
+            }
+            s => {
+                let mut remaining = s;
+                let mut replaced = String::new();
+                while let Some(idx) = remaining.find('%') {
+                    // Add everything up to this point
+                    replaced.push_str(&remaining[..idx]);
+                    let code_idx = idx + 1;
+                    let mut chars = remaining[code_idx..].chars();
+                    let Some(code) = chars.next() else {
+                        return Err(InvalidFieldCode('\0'));
+                    };
+                    match code {
+                        // FIXME: this is actually supposed to use seperate commands for each
+                        // argument
+                        'f' | 'u' => {
+                            if had_file_or_url {
+                                return Err(MultipleFileArgs);
+                            }
+                            had_file_or_url = true;
+                            if let Some(f) = context.args.first() {
+                                replaced.push_str(f);
+                            } else {
+                                // If we don't have any files, then skip this argument
+                                continue 'arg_loop;
+                            }
+                        }
+                        // FIXME? should we localize the name
+                        'c' => {
+                            if let Some(Name(name)) = context.source.get() {
+                                replaced.push_str(&name);
+                            }
+                        }
+                        'k' => {
+                            if let Some(path) = &context.source_path {
+                                replaced.push_str(path);
+                            }
+                        }
+                        '%' => {
+                            replaced.push('%');
+                        }
+                        // Deprecated arguments should be ignored
+                        'd' | 'D' | 'n' | 'N' | 'v' | 'm' => continue 'arg_loop,
+                        _ => return Err(InvalidFieldCode(code)),
+                    }
+                    remaining = chars.as_str();
+                }
+                if replaced.is_empty() {
+                    command.arg(s);
+                } else {
+                    command.arg(replaced);
+                }
+            }
         }
     }
     Ok(command)

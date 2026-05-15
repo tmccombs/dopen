@@ -1,6 +1,3 @@
-// we shouldn't really need these
-extern crate regex;
-
 #[allow(dead_code)]
 mod desktop;
 
