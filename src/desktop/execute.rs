@@ -2,7 +2,7 @@ use std::os::unix::process::CommandExt;
 use std::process::Command;
 use std::str;
 
-use super::entries::{Icon, Name};
+use super::entries::{Icon, Name, Path};
 use super::model::DesktopEntry;
 use crate::entries::Exec;
 
@@ -82,7 +82,7 @@ impl<'a> Iterator for CommandWords<'a> {
 
 // TODO: test for parse_command
 
-pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
+pub fn build_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Command, Error> {
     use self::Error::*;
 
     eprintln!("command={}", command);
@@ -162,6 +162,9 @@ pub fn parse_command<'a>(command: &str, context: &ExecContext<'a>) -> Result<Com
             }
         }
     }
+    if let Some(Path(path)) = context.source.get() {
+        command.current_dir(path);
+    }
     Ok(command)
 }
 
@@ -177,7 +180,7 @@ impl<'a> CommandExecutor<'a> {
         path: Option<String>,
     ) -> Result<CommandExecutor<'a>, Error> {
         let exec_str = entry.get::<Exec>().ok_or(Error::NoCommand)?;
-        let command = parse_command(
+        let command = build_command(
             &exec_str,
             &ExecContext {
                 source: entry,
@@ -201,6 +204,7 @@ impl<'a> Executor for CommandExecutor<'a> {
     }
 }
 
+// TODO: dbus activation
 pub fn execute(entry: &DesktopEntry, args: &[String], path: Option<String>) -> Result<(), Error> {
     CommandExecutor::new(entry, args, path).and_then(Executor::execute)
 }
