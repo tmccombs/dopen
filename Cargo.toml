@@ -3,7 +3,7 @@ name = "dopen"
 version = "0.1.0"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 description = "CLI to execute .desktop files"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "libdopen"

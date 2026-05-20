@@ -17,7 +17,7 @@ impl std::cmp::PartialEq for ParseError {
     fn eq(&self, other: &Self) -> bool {
         use self::ParseError::*;
         match (self, other) {
-            (Syntax(ref e1), Syntax(e2)) => e1 == e2,
+            (Syntax(e1), Syntax(e2)) => e1 == e2,
             (NonUtf8, NonUtf8) => true,
             _ => false,
         }
